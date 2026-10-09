@@ -113,7 +113,7 @@ set_package_lists() {
             claude-desktop
         )
         [[ "$FAMILY" == ubuntu ]] && PACKAGES+=(gnome-tweaks gnome-shell-extension-manager)
-        SNAPS=(firefox bitwarden protonmail-bridge spotify yazi:classic intellij-idea:classic code:classic zig:classic)
+        SNAPS=(firefox bitwarden protonmail-bridge spotify yazi:classic intellij-idea-ultimate:classic code:classic zig:classic)
         FLATPAKS=(org.mozilla.firefox com.bitwarden.desktop com.spotify.Client ch.protonmail.protonmail-bridge
                   com.jetbrains.IntelliJ-IDEA-Ultimate com.visualstudio.code)
         [[ "$FAMILY" == debian ]] && PACKAGES+=(flatpak)
@@ -133,7 +133,7 @@ set_package_lists() {
     fedora)
         BOOTSTRAP=(git gh stow curl openssh-clients xclip wl-clipboard flatpak)
         PACKAGES=(
-            make gcc gcc-c++ wget whois
+            make gcc gcc-c++ wget2-wget whois
             neovim fish kitty alacritty ghostty starship btop yazi zig
             ffmpeg-free python3-pip java-latest-openjdk-devel
             jetbrains-mono-fonts-all firefox gnome-tweaks
@@ -236,11 +236,17 @@ add_claude_repo() {
     elif have wget; then run sudo wget -qO "$keyring" "$url"
     else run sudo python3 -c "import urllib.request,sys; open(sys.argv[1],'wb').write(urllib.request.urlopen(sys.argv[2]).read())" "$keyring" "$url"
     fi || { fail "Could not download the Claude Desktop key"; return 1; }
-    printf '%s\n' "$line" | run sudo tee "$list" >/dev/null && ok "Claude Desktop repo added"
+    if (( DRY_RUN )); then
+        info "Would write $list"
+    elif printf '%s\n' "$line" | sudo tee "$list" >/dev/null; then
+        ok "Claude Desktop repo added"
+    else
+        fail "Could not write $list"
+    fi
 }
 
 ensure_github_key() {
-    local pub_body keys=""
+    local pub_body keys="" keys_ok=0
     if ! gh auth status >/dev/null 2>&1; then
         info "Logging in to GitHub (follow the browser prompt)"
         gh auth login -h github.com -p ssh -s admin:public_key -w --skip-ssh-key || warn "gh login failed"
@@ -248,13 +254,18 @@ ensure_github_key() {
     gh auth status >/dev/null 2>&1 || { warn "Not logged in to gh. Paste the key here: https://github.com/settings/ssh/new"; return; }
 
     pub_body="$(awk '{print $2}' "$SSH_KEY.pub")"
-    keys="$(gh api user/keys --jq '.[].key' 2>/dev/null)" || {
+    if keys="$(gh api user/keys --jq '.[].key' 2>/dev/null)"; then
+        keys_ok=1
+    else
         info "Token lacks key permissions, refreshing"
-        gh auth refresh -h github.com -s admin:public_key && keys="$(gh api user/keys --jq '.[].key' 2>/dev/null)"
-    }
-    if grep -qF "$pub_body" <<<"${keys:-}"; then
+        if gh auth refresh -h github.com -s admin:public_key && keys="$(gh api user/keys --jq '.[].key' 2>/dev/null)"; then
+            keys_ok=1
+        fi
+    fi
+
+    if (( keys_ok )) && grep -qF "$pub_body" <<<"$keys"; then
         ok "Key already registered on GitHub"
-    elif [[ -n "${keys+x}" ]] && gh ssh-key add "$SSH_KEY.pub" -t "$(hostname)-$(date +%F)"; then
+    elif (( keys_ok )) && gh ssh-key add "$SSH_KEY.pub" -t "$(hostname)-$(date +%F)"; then
         ok "Key added to GitHub through gh"
     else
         warn "gh couldn't upload it. Paste the clipboard here: https://github.com/settings/ssh/new"
@@ -300,7 +311,7 @@ steam_arch() {
     local gpu; gpu="$(lspci 2>/dev/null | grep -Ei 'vga|3d' || true)"
     gpu="${gpu,,}"
     [[ "$gpu" == *nvidia* ]] && gpu_pkgs+=(nvidia-utils lib32-nvidia-utils)
-    [[ "$gpu" == *amd* || "$gpu" == *radeon* || "$gpu" == *ati* ]] && gpu_pkgs+=(vulkan-radeon lib32-vulkan-radeon)
+    [[ "$gpu" == *amd* || "$gpu" == *radeon* || "$gpu" == *"ati technologies"* ]] && gpu_pkgs+=(vulkan-radeon lib32-vulkan-radeon)
     [[ "$gpu" == *intel* ]] && gpu_pkgs+=(vulkan-intel lib32-vulkan-intel)
     info "GPU packages: ${gpu_pkgs[*]}"
     install_group "Steam" steam ttf-liberation "${gpu_pkgs[@]}"
@@ -360,9 +371,17 @@ main() {
     (( DRY_RUN )) && warn "Dry run: nothing will be changed."
     set_package_lists
 
+    if (( EUID == 0 )); then
+        sudo() { "$@"; }
+    elif ! have sudo; then
+        fail "sudo is required (or run as root)"; exit 1
+    fi
+
     section "Privileges"
     if (( DRY_RUN )); then
         info "Skipping sudo prompt (dry run)"
+    elif (( EUID == 0 )); then
+        ok "running as root"
     elif sudo -v; then
         ok "sudo ready"
         ( while true; do sudo -n true; sleep 50; kill -0 "$$" 2>/dev/null || exit; done ) &
@@ -434,8 +453,16 @@ main() {
     section "Dotfiles"
     if [[ -d "$DOTFILES_DIR/.git" ]]; then
         run git -C "$DOTFILES_DIR" pull --ff-only && ok "dotfiles updated" || warn "Could not pull dotfiles (local changes?)"
+    elif run git clone "$DOTFILES_REPO" "$DOTFILES_DIR"; then
+        ok "dotfiles cloned to $DOTFILES_DIR"
     else
-        run git clone "$DOTFILES_REPO" "$DOTFILES_DIR" && ok "dotfiles cloned to $DOTFILES_DIR" || fail "Could not clone dotfiles"
+        warn "SSH clone failed, retrying over HTTPS"
+        if GIT_TERMINAL_PROMPT=0 run git clone "$DOTFILES_HTTPS" "$DOTFILES_DIR"; then
+            run git -C "$DOTFILES_DIR" remote set-url origin "$DOTFILES_REPO"
+            ok "dotfiles cloned to $DOTFILES_DIR"
+        else
+            fail "Could not clone dotfiles"
+        fi
     fi
     stow_dotfiles
 
@@ -455,12 +482,12 @@ main() {
         section "Flatpaks"
         if have flatpak; then
             local app
-            run flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+            run sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
             for app in "${FLATPAKS[@]}"; do
                 if flatpak info "$app" >/dev/null 2>&1; then info "$app already installed"
-                else run flatpak install -y flathub "$app" && ok "flatpak $app installed" || fail "flatpak $app failed"; fi
+                else run sudo flatpak install -y flathub "$app" && ok "flatpak $app installed" || fail "flatpak $app failed"; fi
             done
-            run flatpak update -y && ok "Flatpaks updated" || warn "flatpak update reported problems"
+            run sudo flatpak update -y && ok "Flatpaks updated" || warn "flatpak update reported problems"
         else
             warn "flatpak isn't available, skipping GUI apps"
         fi
@@ -468,7 +495,7 @@ main() {
 
     section "Font"
     if have fc-cache; then
-        run fc-cache -f >/dev/null 2>&1
+        run fc-cache -f
         if fc-list 2>/dev/null | grep -qi 'JetBrains *Mono'; then ok "JetBrainsMono is available"
         else (( DRY_RUN )) || warn "JetBrainsMono not found by fontconfig"; fi
     else
@@ -489,8 +516,8 @@ main() {
         run git clone "$POKEMON_REPO" "$POKEMON_DIR" && ok "pokemon-colorscripts cloned to $POKEMON_DIR" || fail "Could not clone pokemon-colorscripts"
     fi
 
-    if [[ -x "$POKEMON_DIR/install.sh" ]]; then
-        if (cd "$POKEMON_DIR" && run sudo ./install.sh); then ok "pokemon-colorscripts installed"
+    if [[ -f "$POKEMON_DIR/install.sh" ]]; then
+        if (cd "$POKEMON_DIR" && run sudo sh ./install.sh); then ok "pokemon-colorscripts installed"
         else fail "pokemon-colorscripts install failed"; fi
     elif (( ! DRY_RUN )); then
         warn "No install.sh in $POKEMON_DIR, skipping install"
