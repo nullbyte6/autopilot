@@ -1,7 +1,7 @@
-#! /usr/bin/env bash
+#!/usr/bin/env bash
 # autopilot — rebuild (or refresh) my whole setup on any machine. Safe to re-run.
 #
-#   ./run.sh               full run: bootstrap, git, ssh, dotfiles, packages, font, steam
+#   ./run.sh               full run: bootstrap, git, ssh, dotfiles, packages, font, steam, pokemon-colorscripts
 #   ./run.sh --yes         same, but answer "yes" to package manager prompts
 #   ./run.sh --dry-run     print every change instead of doing it
 #   ./run.sh --no-steam    skip the steam section
@@ -23,6 +23,9 @@ GIT_BRANCH="main"
 DOTFILES_REPO="git@github.com:nullbyte6/dotfiles.git"
 DOTFILES_DIR="$HOME/dotfiles"
 SSH_KEY="$HOME/.ssh/id_ed25519"
+
+POKEMON_REPO="https://gitlab.com/phoneybadger/pokemon-colorscripts.git"
+POKEMON_DIR="$HOME/pokemon-colorscripts"
 
 ASSUME_YES=
 DRY_RUN=0
@@ -483,6 +486,22 @@ if (( DO_STEAM )); then
     "steam_${FAMILY}"
 else
     info "Steam skipped (--no-steam)"
+fi
+
+# ─── 09 · Pokémon colorscripts ───────────────────────────────────────────────
+
+section "Pokémon colorscripts"
+if [[ -d "$POKEMON_DIR/.git" ]]; then
+    run git -C "$POKEMON_DIR" pull --ff-only && ok "pokemon-colorscripts updated" || warn "Could not pull pokemon-colorscripts (local changes?)"
+else
+    run git clone "$POKEMON_REPO" "$POKEMON_DIR" && ok "pokemon-colorscripts cloned to $POKEMON_DIR" || fail "Could not clone pokemon-colorscripts"
+fi
+
+if [[ -x "$POKEMON_DIR/install.sh" ]]; then
+    if (cd "$POKEMON_DIR" && run sudo ./install.sh); then ok "pokemon-colorscripts installed"
+    else fail "pokemon-colorscripts install failed"; fi
+elif (( ! DRY_RUN )); then
+    warn "No install.sh in $POKEMON_DIR, skipping install"
 fi
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
