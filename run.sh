@@ -125,15 +125,15 @@ set_package_lists() {
             neovim fish kitty alacritty ghostty starship bashtop yazi zig
             ffmpeg python-pip jdk-openjdk
             ttf-jetbrains-mono
-            firefox bitwarden protonmail-bridge spotify
+            firefox bitwarden protonmail-bridge spotify claude-desktop
             intellij-idea-ultimate-edition visual-studio-code-bin
         )
         SNAPS=(); FLATPAKS=()
         ;;
     fedora)
-        BOOTSTRAP=(git gh stow curl openssh-clients xclip wl-clipboard flatpak)
+        BOOTSTRAP=(git gh stow curl openssh-clients xclip wl-clipboard flatpak dnf-plugins-core)
         PACKAGES=(
-            make gcc gcc-c++ wget2-wget whois
+            make gcc gcc-c++ wget2-wget whois claude-desktop
             neovim fish kitty alacritty ghostty starship btop yazi zig
             ffmpeg-free python3-pip java-latest-openjdk-devel
             jetbrains-mono-fonts-all firefox gnome-tweaks
@@ -243,6 +243,15 @@ add_claude_repo() {
     else
         fail "Could not write $list"
     fi
+}
+
+enable_claude_copr() {
+    if dnf copr list 2>/dev/null | grep -q 'wrobelda/claude-desktop'; then
+        info "Claude Desktop COPR already enabled"; return 0
+    fi
+    info "Enabling the unofficial Claude Desktop COPR (wrobelda/claude-desktop)"
+    if run sudo dnf copr enable -y wrobelda/claude-desktop; then ok "Claude Desktop COPR enabled"
+    else fail "Could not enable the Claude Desktop COPR"; fi
 }
 
 ensure_github_key() {
@@ -407,6 +416,9 @@ main() {
 
     section "Bootstrap tools"
     install_group "Bootstrap" "${BOOTSTRAP[@]}"
+
+    [[ "$FAMILY" == fedora ]] && enable_claude_copr
+    [[ "$FAMILY" == suse ]] && warn "No Claude Desktop package exists for openSUSE, skipping it"
 
     if [[ "$FAMILY" == arch ]] && ! have yay; then
         info "yay not found, building it from the AUR"
