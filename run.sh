@@ -37,7 +37,7 @@ SUDO_KEEPALIVE=
 declare -A STOW_FOR=(
     [neovim]=neovim [fish]=fish [kitty]=kitty [alacritty]=alacritty
     [ghostty]=ghostty [starship]=starship [yazi]=yazi [bashtop]=bashtop
-    [bashrc]=bashrc [zshrc]=zshrc
+    [btop]=bashtop [bashrc]=bashrc [zshrc]=zshrc
 )
 ALWAYS_STOW=(bashrc zshrc)
 
@@ -281,7 +281,9 @@ stow_dotfiles() {
         for app in "${!STOW_FOR[@]}"; do
             [[ "$wanted" == *" $app "* && -d "$DOTFILES_DIR/${STOW_FOR[$app]}" ]] && stow_pkgs+=("${STOW_FOR[$app]}")
         done
-        mapfile -t stow_pkgs < <(printf '%s\n' "${stow_pkgs[@]}" | sort -u)
+        if (( ${#stow_pkgs[@]} )); then
+            mapfile -t stow_pkgs < <(printf '%s\n' "${stow_pkgs[@]}" | sort -u)
+        fi
     fi
 
     if (( ${#stow_pkgs[@]} == 0 )); then
@@ -293,7 +295,10 @@ stow_dotfiles() {
     for pkg in "${stow_pkgs[@]}"; do
         conflicts="$(cd "$DOTFILES_DIR" && stow -n -t "$HOME" "$pkg" 2>&1 \
             | sed -n \
-                -e 's/.*existing target \(is neither a link nor a directory\|is not owned by stow\): //p' \
+                -e 's/.*existing target is neither a link nor a directory: //p' \
+                -e 's/.*existing target is not owned by stow: //p' \
+                -e 's/.*over existing target \(.*\) since neither a link nor a directory.*/\1/p' \
+                -e 's/.*over existing target \(.*\) since .*not owned by stow.*/\1/p' \
             | sort -u)"
         while IFS= read -r f; do
             [[ -z "$f" ]] && continue
