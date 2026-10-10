@@ -14,6 +14,9 @@ SSH_KEY="$HOME/.ssh/id_ed25519"
 POKEMON_REPO="https://gitlab.com/phoneybadger/pokemon-colorscripts.git"
 POKEMON_DIR="$HOME/pokemon-colorscripts"
 
+JDK_DIR="/opt/jdk-25"
+JDK_URL="https://download.oracle.com/java/25/latest"
+
 ASSUME_YES=
 DRY_RUN=0
 DO_STEAM=1
@@ -108,7 +111,7 @@ set_package_lists() {
         PACKAGES=(
             build-essential make wget whois
             neovim fish kitty alacritty ghostty starship bashtop
-            ffmpeg python3-pip python3-venv default-jdk
+            ffmpeg python3-pip python3-venv
             fonts-jetbrains-mono
             claude-desktop
         )
@@ -123,7 +126,7 @@ set_package_lists() {
         PACKAGES=(
             make wget whois
             neovim fish kitty alacritty ghostty starship bashtop yazi zig
-            ffmpeg python-pip jdk-openjdk
+            ffmpeg python-pip
             ttf-jetbrains-mono
             firefox bitwarden protonmail-bridge spotify claude-desktop
             intellij-idea-ultimate-edition visual-studio-code-bin
@@ -135,7 +138,7 @@ set_package_lists() {
         PACKAGES=(
             make gcc gcc-c++ wget2-wget whois claude-desktop
             neovim fish kitty alacritty ghostty starship btop yazi zig
-            ffmpeg-free python3-pip java-latest-openjdk-devel
+            ffmpeg-free python3-pip
             jetbrains-mono-fonts-all firefox gnome-tweaks
         )
         SNAPS=()
@@ -147,7 +150,7 @@ set_package_lists() {
         PACKAGES=(
             make gcc gcc-c++ wget whois
             neovim fish kitty alacritty starship bashtop yazi zig
-            ffmpeg python3-pip java-devel
+            ffmpeg python3-pip
             jetbrains-mono-fonts MozillaFirefox gnome-tweaks
         )
         SNAPS=()
@@ -214,6 +217,27 @@ install_group() {
     if (( ${#AVAIL[@]} == 0 )); then info "$label: nothing to install"; return; fi
     if install_pkgs "${AVAIL[@]}"; then ok "$label installed/updated (${#AVAIL[@]} packages)"
     else fail "$label: package manager reported errors"; fi
+}
+
+install_jdk() {
+    local arch tmp
+    case "$(uname -m)" in
+        x86_64|amd64)  arch=x64 ;;
+        aarch64|arm64) arch=aarch64 ;;
+        *) fail "No JDK 25 build for $(uname -m)"; return 1 ;;
+    esac
+    if [[ -x "$JDK_DIR/bin/java" ]]; then
+        ok "JDK 25 already in $JDK_DIR"; return 0
+    fi
+    tmp="$(mktemp -d)"
+    if run curl -fL --retry 3 -o "$tmp/jdk-25.tar.gz" "$JDK_URL/jdk-25_linux-${arch}_bin.tar.gz" \
+       && run sudo mkdir -p "$JDK_DIR" \
+       && run sudo tar -xzf "$tmp/jdk-25.tar.gz" -C "$JDK_DIR" --strip-components=1; then
+        ok "JDK 25 extracted to $JDK_DIR"
+    else
+        fail "Could not install JDK 25 into $JDK_DIR"
+    fi
+    rm -rf "$tmp"
 }
 
 clip() {
@@ -485,6 +509,9 @@ main() {
 
     section "Packages"
     install_group "Packages" "${PACKAGES[@]}"
+
+    section "JDK"
+    install_jdk
 
     if (( ${#SNAPS[@]} )) && have snap; then
         section "Snaps"
