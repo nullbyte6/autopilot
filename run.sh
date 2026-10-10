@@ -274,7 +274,7 @@ ensure_github_key() {
 
     if (( keys_ok )) && grep -qF "$pub_body" <<<"$keys"; then
         ok "Key already registered on GitHub"
-    elif (( keys_ok )) && gh ssh-key add "$SSH_KEY.pub" -t "$(hostname)-$(date +%F)"; then
+    elif (( keys_ok )) && gh ssh-key add "$SSH_KEY.pub" -t "HOME-$(date +%F)"; then
         ok "Key added to GitHub through gh"
     else
         warn "gh couldn't upload it. Paste the clipboard here: https://github.com/settings/ssh/new"
