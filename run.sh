@@ -40,9 +40,11 @@ SUDO_KEEPALIVE=
 declare -A STOW_FOR=(
     [neovim]=neovim [fish]=fish [kitty]=kitty [alacritty]=alacritty
     [ghostty]=ghostty [starship]=starship [yazi]=yazi [bashtop]=bashtop
-    [btop]=bashtop [bashrc]=bashrc [zshrc]=zshrc
+    [btop]=bashtop [fastfetch]=fastfetch [bashrc]=bashrc [zshrc]=zshrc
+    [ohmyzsh]=ohmyzsh
 )
-ALWAYS_STOW=(bashrc zshrc)
+declare -A STOW_OPTS=([ohmyzsh]='--ignore=themes')
+ALWAYS_STOW=(bashrc zshrc ohmyzsh)
 
 logo() {
     cat <<'LOGO_EOF'
@@ -57,7 +59,7 @@ usage() {
     cat <<'USAGE_EOF'
 autopilot: rebuild (or refresh) my whole setup on any machine. Safe to re-run.
 
-  run.sh               full run: bootstrap, git, ssh, dotfiles, packages, font, steam, pokemon-colorscripts
+  run.sh               full run: bootstrap, git, ssh, dotfiles, packages, zsh, font, steam, pokemon-colorscripts
   run.sh --yes         same, but answer "yes" to package manager prompts
   run.sh --dry-run     print every change instead of doing it
   run.sh --no-steam    skip the steam section
@@ -110,7 +112,7 @@ set_package_lists() {
         BOOTSTRAP=(git gh stow curl openssh-client xclip wl-clipboard)
         PACKAGES=(
             build-essential make wget whois
-            neovim fish kitty alacritty ghostty starship bashtop
+            neovim fish zsh kitty fastfetch starship bashtop
             ffmpeg python3-pip python3-venv
             fonts-jetbrains-mono
             claude-desktop
@@ -125,7 +127,7 @@ set_package_lists() {
         BOOTSTRAP=(git github-cli stow curl openssh base-devel xclip wl-clipboard pciutils)
         PACKAGES=(
             make wget whois
-            neovim fish kitty alacritty ghostty starship bashtop yazi zig
+            neovim fish zsh kitty fastfetch starship bashtop yazi zig
             ffmpeg python-pip
             ttf-jetbrains-mono
             firefox bitwarden protonmail-bridge spotify claude-desktop
@@ -137,7 +139,7 @@ set_package_lists() {
         BOOTSTRAP=(git gh stow curl openssh-clients xclip wl-clipboard flatpak dnf-plugins-core)
         PACKAGES=(
             make gcc gcc-c++ wget2-wget whois claude-desktop
-            neovim fish kitty alacritty ghostty starship btop yazi zig
+            neovim fish zsh kitty fastfetch starship btop yazi zig
             ffmpeg-free python3-pip
             jetbrains-mono-fonts-all firefox gnome-tweaks
         )
@@ -149,7 +151,7 @@ set_package_lists() {
         BOOTSTRAP=(git gh stow curl openssh-clients xclip wl-clipboard flatpak)
         PACKAGES=(
             make gcc gcc-c++ wget whois
-            neovim fish kitty alacritty starship bashtop yazi zig
+            neovim fish zsh kitty fastfetch starship bashtop yazi zig
             ffmpeg python3-pip
             jetbrains-mono-fonts MozillaFirefox gnome-tweaks
         )
@@ -326,7 +328,7 @@ stow_dotfiles() {
 
     backup="$HOME/.dotfiles-backup/$(date +%Y%m%d-%H%M%S)"
     for pkg in "${stow_pkgs[@]}"; do
-        conflicts="$(cd "$DOTFILES_DIR" && stow -n -t "$HOME" "$pkg" 2>&1 \
+        conflicts="$(cd "$DOTFILES_DIR" && stow -n ${STOW_OPTS[$pkg]:-} -t "$HOME" "$pkg" 2>&1 \
             | sed -n \
                 -e 's/.*existing target is neither a link nor a directory: //p' \
                 -e 's/.*existing target is not owned by stow: //p' \
@@ -339,9 +341,47 @@ stow_dotfiles() {
             run mkdir -p "$backup/$(dirname "$f")"
             run mv "$HOME/$f" "$backup/$f"
         done <<<"$conflicts"
-        if (cd "$DOTFILES_DIR" && run stow -R -t "$HOME" "$pkg"); then ok "stowed $pkg"
+        if (cd "$DOTFILES_DIR" && run stow -R ${STOW_OPTS[$pkg]:-} -t "$HOME" "$pkg"); then ok "stowed $pkg"
         else fail "stow failed for $pkg"; fi
     done
+}
+
+setup_zsh() {
+    local zsh_path user current
+    zsh_path="$(command -v zsh || true)"
+    if [[ -z "$zsh_path" ]]; then
+        (( DRY_RUN )) && zsh_path=/usr/bin/zsh || { fail "zsh is not installed, cannot set it as default shell"; return 1; }
+    fi
+
+    if [[ -d "$DOTFILES_DIR/.git" ]]; then
+        if (cd "$DOTFILES_DIR" && run git submodule update --init --recursive); then
+            ok "Oh My Zsh and powerlevel10k submodules up to date"
+        else
+            fail "Could not update the Oh My Zsh submodules"
+        fi
+    else
+        warn "No dotfiles checkout, Oh My Zsh and powerlevel10k are missing"
+    fi
+
+    if [[ -e "$HOME/.oh-my-zsh/oh-my-zsh.sh" ]]; then ok "Oh My Zsh is available in ~/.oh-my-zsh"
+    elif (( ! DRY_RUN )); then warn "~/.oh-my-zsh is not in place, check the ohmyzsh stow"; fi
+
+    if ! grep -qxF "$zsh_path" /etc/shells 2>/dev/null; then
+        info "Registering $zsh_path in /etc/shells"
+        if (( DRY_RUN )); then run sh -c "echo $zsh_path >> /etc/shells"
+        else printf '%s\n' "$zsh_path" | sudo tee -a /etc/shells >/dev/null || { fail "Could not update /etc/shells"; return 1; }
+        fi
+    fi
+
+    user="${USER:-$(id -un)}"
+    current="$(getent passwd "$user" | cut -d: -f7)"
+    if [[ "$current" == "$zsh_path" ]]; then
+        ok "zsh is already the default shell"
+    elif run sudo chsh -s "$zsh_path" "$user"; then
+        ok "Default shell set to zsh (log out and back in to apply)"
+    else
+        fail "Could not set zsh as the default shell"
+    fi
 }
 
 steam_arch() {
@@ -494,11 +534,11 @@ main() {
     section "Dotfiles"
     if [[ -d "$DOTFILES_DIR/.git" ]]; then
         run git -C "$DOTFILES_DIR" pull --ff-only && ok "dotfiles updated" || warn "Could not pull dotfiles (local changes?)"
-    elif run git clone "$DOTFILES_REPO" "$DOTFILES_DIR"; then
+    elif run git clone --recurse-submodules "$DOTFILES_REPO" "$DOTFILES_DIR"; then
         ok "dotfiles cloned to $DOTFILES_DIR"
     else
         warn "SSH clone failed, retrying over HTTPS"
-        if GIT_TERMINAL_PROMPT=0 run git clone "$DOTFILES_HTTPS" "$DOTFILES_DIR"; then
+        if GIT_TERMINAL_PROMPT=0 run git clone --recurse-submodules "$DOTFILES_HTTPS" "$DOTFILES_DIR"; then
             run git -C "$DOTFILES_DIR" remote set-url origin "$DOTFILES_REPO"
             ok "dotfiles cloned to $DOTFILES_DIR"
         else
@@ -509,6 +549,9 @@ main() {
 
     section "Packages"
     install_group "Packages" "${PACKAGES[@]}"
+
+    section "Zsh"
+    setup_zsh
 
     section "JDK"
     install_jdk
