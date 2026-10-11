@@ -11,6 +11,11 @@ DOTFILES_HTTPS="https://github.com/nullbyte6/dotfiles.git"
 DOTFILES_DIR="$HOME/dotfiles"
 SSH_KEY="$HOME/.ssh/id_ed25519"
 
+ZSH_PLUGINS=(
+    "zsh-autosuggestions|https://github.com/zsh-users/zsh-autosuggestions.git"
+    "zsh-syntax-highlighting|https://github.com/zsh-users/zsh-syntax-highlighting.git"
+)
+
 POKEMON_REPO="https://gitlab.com/phoneybadger/pokemon-colorscripts.git"
 POKEMON_DIR="$HOME/pokemon-colorscripts"
 
@@ -365,6 +370,16 @@ setup_zsh() {
 
     if [[ -e "$HOME/.oh-my-zsh/oh-my-zsh.sh" ]]; then ok "Oh My Zsh is available in ~/.oh-my-zsh"
     elif (( ! DRY_RUN )); then warn "~/.oh-my-zsh is not in place, check the ohmyzsh stow"; fi
+
+    local entry plugin_dir
+    for entry in "${ZSH_PLUGINS[@]}"; do
+        plugin_dir="$HOME/.oh-my-zsh/custom/plugins/${entry%%|*}"
+        if [[ -d "$plugin_dir/.git" ]]; then
+            run git -C "$plugin_dir" pull --ff-only && ok "${entry%%|*} updated" || warn "Could not pull ${entry%%|*}"
+        else
+            run git clone --depth 1 "${entry#*|}" "$plugin_dir" && ok "${entry%%|*} cloned" || fail "Could not clone ${entry%%|*}"
+        fi
+    done
 
     if ! grep -qxF "$zsh_path" /etc/shells 2>/dev/null; then
         info "Registering $zsh_path in /etc/shells"
