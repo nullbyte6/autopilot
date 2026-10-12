@@ -16,6 +16,10 @@ ZSH_PLUGINS=(
     "zsh-syntax-highlighting|https://github.com/zsh-users/zsh-syntax-highlighting.git"
 )
 
+OXIDE_REPO="git@github.com:nullbyte6/oxide.git"
+OXIDE_HTTPS="https://github.com/nullbyte6/oxide.git"
+OXIDE_DIR="$HOME/oxide"
+
 POKEMON_REPO="https://gitlab.com/phoneybadger/pokemon-colorscripts.git"
 POKEMON_DIR="$HOME/pokemon-colorscripts"
 
@@ -27,11 +31,11 @@ DRY_RUN=0
 DO_STEAM=1
 
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
-    GOLD=$'\e[38;2;230;213;115m'; BROWN=$'\e[38;2;156;131;82m'
+    ACCENT=$'\e[38;2;46;204;113m'; MUTED=$'\e[38;2;39;130;82m'
     GREEN=$'\e[38;2;123;198;74m'; RED=$'\e[38;2;222;97;32m'; YELLOW=$'\e[38;2;246;226;57m'
     DIM=$'\e[2m'; BOLD=$'\e[1m'; RESET=$'\e[0m'
 else
-    GOLD=; BROWN=; GREEN=; RED=; YELLOW=; DIM=; BOLD=; RESET=
+    ACCENT=; MUTED=; GREEN=; RED=; YELLOW=; DIM=; BOLD=; RESET=
 fi
 
 N_OK=0; N_WARN=0; N_FAIL=0
@@ -46,10 +50,10 @@ declare -A STOW_FOR=(
     [neovim]=neovim [fish]=fish [kitty]=kitty [alacritty]=alacritty
     [ghostty]=ghostty [starship]=starship [yazi]=yazi [bashtop]=bashtop
     [btop]=bashtop [fastfetch]=fastfetch [bashrc]=bashrc [zshrc]=zshrc
-    [ohmyzsh]=ohmyzsh
+    [ohmyzsh]=ohmyzsh [oxide]=oxide
 )
 declare -A STOW_OPTS=([ohmyzsh]='--ignore=themes')
-ALWAYS_STOW=(bashrc zshrc ohmyzsh)
+ALWAYS_STOW=(bashrc zshrc ohmyzsh oxide)
 
 logo() {
     cat <<'LOGO_EOF'
@@ -76,15 +80,15 @@ USAGE_EOF
 
 section() {
     SECTION_N=$((SECTION_N + 1))
-    printf '\n%s╭─%s %s%02d%s %s%s%s\n' "$GOLD" "$RESET" "$BROWN" "$SECTION_N" "$RESET" "$BOLD" "$1" "$RESET"
+    printf '\n%s╭─%s %s%02d%s %s%s%s\n' "$ACCENT" "$RESET" "$MUTED" "$SECTION_N" "$RESET" "$BOLD" "$1" "$RESET"
 }
-info() { printf '%s│%s  %s•%s %s\n' "$GOLD" "$RESET" "$BROWN" "$RESET" "$*"; }
-ok()   { N_OK=$((N_OK + 1));     printf '%s│%s  %s✔%s %s\n' "$GOLD" "$RESET" "$GREEN" "$RESET" "$*"; }
-warn() { N_WARN=$((N_WARN + 1)); printf '%s│%s  %s▲%s %s\n' "$GOLD" "$RESET" "$YELLOW" "$RESET" "$*"; }
-fail() { N_FAIL=$((N_FAIL + 1)); printf '%s│%s  %s✘%s %s\n' "$GOLD" "$RESET" "$RED" "$RESET" "$*"; }
+info() { printf '%s│%s  %s•%s %s\n' "$ACCENT" "$RESET" "$MUTED" "$RESET" "$*"; }
+ok()   { N_OK=$((N_OK + 1));     printf '%s│%s  %s✔%s %s\n' "$ACCENT" "$RESET" "$GREEN" "$RESET" "$*"; }
+warn() { N_WARN=$((N_WARN + 1)); printf '%s│%s  %s▲%s %s\n' "$ACCENT" "$RESET" "$YELLOW" "$RESET" "$*"; }
+fail() { N_FAIL=$((N_FAIL + 1)); printf '%s│%s  %s✘%s %s\n' "$ACCENT" "$RESET" "$RED" "$RESET" "$*"; }
 
 run() {
-    printf '%s│%s  %s$ %s%s\n' "$GOLD" "$RESET" "$DIM" "$*" "$RESET"
+    printf '%s│%s  %s$ %s%s\n' "$ACCENT" "$RESET" "$DIM" "$*" "$RESET"
     (( DRY_RUN )) && return 0
     "$@"
 }
@@ -116,7 +120,7 @@ set_package_lists() {
     ubuntu|debian)
         BOOTSTRAP=(git gh stow curl openssh-client xclip wl-clipboard)
         PACKAGES=(
-            build-essential make wget whois
+            build-essential make wget whois cargo
             neovim fish zsh kitty fastfetch starship bashtop
             ffmpeg python3-pip python3-venv
             fonts-jetbrains-mono
@@ -131,7 +135,7 @@ set_package_lists() {
     arch)
         BOOTSTRAP=(git github-cli stow curl openssh base-devel xclip wl-clipboard pciutils)
         PACKAGES=(
-            make wget whois
+            make wget whois rust
             neovim fish zsh kitty fastfetch starship bashtop yazi zig
             ffmpeg python-pip
             ttf-jetbrains-mono
@@ -143,7 +147,7 @@ set_package_lists() {
     fedora)
         BOOTSTRAP=(git gh stow curl openssh-clients xclip wl-clipboard flatpak dnf-plugins-core)
         PACKAGES=(
-            make gcc gcc-c++ wget2-wget whois claude-desktop
+            make gcc gcc-c++ wget2-wget whois cargo claude-desktop
             neovim fish zsh kitty fastfetch starship btop yazi zig
             ffmpeg-free python3-pip
             jetbrains-mono-fonts-all firefox gnome-tweaks
@@ -155,7 +159,7 @@ set_package_lists() {
     suse)
         BOOTSTRAP=(git gh stow curl openssh-clients xclip wl-clipboard flatpak)
         PACKAGES=(
-            make gcc gcc-c++ wget whois
+            make gcc gcc-c++ wget whois cargo
             neovim fish zsh kitty fastfetch starship bashtop yazi zig
             ffmpeg python3-pip
             jetbrains-mono-fonts MozillaFirefox gnome-tweaks
@@ -560,10 +564,37 @@ main() {
             fail "Could not clone dotfiles"
         fi
     fi
+
     stow_dotfiles
 
     section "Packages"
     install_group "Packages" "${PACKAGES[@]}"
+
+    section "Oxide"
+    if [[ -d "$OXIDE_DIR/.git" ]]; then
+        run git -C "$OXIDE_DIR" pull --ff-only && ok "oxide updated" || warn "Could not pull oxide (local changes?)"
+    elif run git clone "$OXIDE_REPO" "$OXIDE_DIR"; then
+        ok "oxide cloned to $OXIDE_DIR"
+    else
+        warn "SSH clone failed, retrying over HTTPS"
+        if GIT_TERMINAL_PROMPT=0 run git clone "$OXIDE_HTTPS" "$OXIDE_DIR"; then
+            run git -C "$OXIDE_DIR" remote set-url origin "$OXIDE_REPO"
+            ok "oxide cloned to $OXIDE_DIR"
+        else
+            fail "Could not clone oxide"
+        fi
+    fi
+
+    if [[ -f "$OXIDE_DIR/install.sh" ]]; then
+        if have cargo || (( DRY_RUN )); then
+            if (cd "$OXIDE_DIR" && run bash ./install.sh); then ok "oxide built and installed"
+            else fail "oxide install failed"; fi
+        else
+            fail "cargo is not installed, cannot build oxide"
+        fi
+    elif (( ! DRY_RUN )); then
+        warn "No install.sh in $OXIDE_DIR, skipping install"
+    fi
 
     section "Zsh"
     setup_zsh
@@ -626,7 +657,7 @@ main() {
     fi
 
     printf '\n%s╰─%s %sDone%s  %s✔ %d%s  %s▲ %d%s  %s✘ %d%s\n' \
-        "$GOLD" "$RESET" "$BOLD" "$RESET" "$GREEN" "$N_OK" "$RESET" "$YELLOW" "$N_WARN" "$RESET" "$RED" "$N_FAIL" "$RESET"
+        "$ACCENT" "$RESET" "$BOLD" "$RESET" "$GREEN" "$N_OK" "$RESET" "$YELLOW" "$N_WARN" "$RESET" "$RED" "$N_FAIL" "$RESET"
     if (( ${#SKIPPED_PKGS[@]} )); then
         printf '   %sNot installed (no repo carries them): %s%s\n' "$DIM" "${SKIPPED_PKGS[*]}" "$RESET"
     fi
