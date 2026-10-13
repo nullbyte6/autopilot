@@ -120,7 +120,7 @@ set_package_lists() {
     ubuntu|debian)
         BOOTSTRAP=(git gh stow curl openssh-client xclip wl-clipboard)
         PACKAGES=(
-            build-essential make wget whois cargo
+            build-essential make wget whois cargo bat
             neovim fish zsh kitty fastfetch starship bashtop
             ffmpeg python3-pip python3-venv
             fonts-jetbrains-mono
@@ -134,7 +134,7 @@ set_package_lists() {
     arch)
         BOOTSTRAP=(git github-cli stow curl openssh base-devel xclip wl-clipboard pciutils)
         PACKAGES=(
-            make wget whois rust
+            make wget whois rust bat
             neovim fish zsh kitty fastfetch starship bashtop yazi zig
             ffmpeg python-pip
             ttf-jetbrains-mono
@@ -145,7 +145,7 @@ set_package_lists() {
     fedora)
         BOOTSTRAP=(git gh stow curl openssh-clients xclip wl-clipboard flatpak dnf-plugins-core)
         PACKAGES=(
-            make gcc gcc-c++ wget2-wget whois cargo claude-desktop
+            make gcc gcc-c++ wget2-wget whois cargo bat claude-desktop
             neovim fish zsh kitty fastfetch starship btop yazi zig
             ffmpeg-free python3-pip
             jetbrains-mono-fonts-all firefox gnome-tweaks
@@ -156,7 +156,7 @@ set_package_lists() {
     suse)
         BOOTSTRAP=(git gh stow curl openssh-clients xclip wl-clipboard flatpak)
         PACKAGES=(
-            make gcc gcc-c++ wget whois cargo
+            make gcc gcc-c++ wget whois cargo bat
             neovim fish zsh kitty fastfetch starship bashtop yazi zig
             ffmpeg python3-pip
             jetbrains-mono-fonts MozillaFirefox gnome-tweaks
@@ -565,6 +565,11 @@ main() {
 
     section "Packages"
     install_group "Packages" "${PACKAGES[@]}"
+
+    if [[ "$FAMILY" == ubuntu || "$FAMILY" == debian ]] && have batcat && ! have bat; then
+        run mkdir -p "$HOME/.local/bin"
+        run ln -sf "$(command -v batcat)" "$HOME/.local/bin/bat" && ok "bat linked to batcat in ~/.local/bin"
+    fi
 
     section "Oxide"
     if [[ -d "$OXIDE_DIR/.git" ]]; then
