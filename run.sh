@@ -127,9 +127,8 @@ set_package_lists() {
             claude-desktop
         )
         [[ "$FAMILY" == ubuntu ]] && PACKAGES+=(gnome-tweaks gnome-shell-extension-manager)
-        SNAPS=(firefox bitwarden protonmail-bridge spotify yazi:classic intellij-idea-ultimate:classic code:classic zig:classic)
-        FLATPAKS=(org.mozilla.firefox com.bitwarden.desktop com.spotify.Client ch.protonmail.protonmail-bridge
-                  com.jetbrains.IntelliJ-IDEA-Ultimate com.visualstudio.code)
+        SNAPS=(firefox bitwarden protonmail-bridge spotify yazi:classic code:classic zig:classic)
+        FLATPAKS=(org.mozilla.firefox com.bitwarden.desktop com.spotify.Client ch.protonmail.protonmail-bridge com.visualstudio.code)
         [[ "$FAMILY" == debian ]] && PACKAGES+=(flatpak)
         ;;
     arch)
@@ -139,8 +138,7 @@ set_package_lists() {
             neovim fish zsh kitty fastfetch starship bashtop yazi zig
             ffmpeg python-pip
             ttf-jetbrains-mono
-            firefox bitwarden protonmail-bridge spotify claude-desktop
-            intellij-idea-ultimate-edition visual-studio-code-bin
+            firefox bitwarden protonmail-bridge spotify claude-desktop visual-studio-code-bin
         )
         SNAPS=(); FLATPAKS=()
         ;;
@@ -153,8 +151,7 @@ set_package_lists() {
             jetbrains-mono-fonts-all firefox gnome-tweaks
         )
         SNAPS=()
-        FLATPAKS=(com.bitwarden.desktop com.spotify.Client ch.protonmail.protonmail-bridge
-                  com.jetbrains.IntelliJ-IDEA-Ultimate com.visualstudio.code)
+        FLATPAKS=(com.bitwarden.desktop com.spotify.Client ch.protonmail.protonmail-bridge com.visualstudio.code)
         ;;
     suse)
         BOOTSTRAP=(git gh stow curl openssh-clients xclip wl-clipboard flatpak)
@@ -165,8 +162,7 @@ set_package_lists() {
             jetbrains-mono-fonts MozillaFirefox gnome-tweaks
         )
         SNAPS=()
-        FLATPAKS=(com.bitwarden.desktop com.spotify.Client ch.protonmail.protonmail-bridge
-                  com.jetbrains.IntelliJ-IDEA-Ultimate com.visualstudio.code)
+        FLATPAKS=(com.bitwarden.desktop com.spotify.Client ch.protonmail.protonmail-bridge com.visualstudio.code)
         ;;
     esac
 }
