@@ -42,6 +42,7 @@ N_OK=0; N_WARN=0; N_FAIL=0
 SKIPPED_PKGS=()
 SECTION_N=0
 FAMILY=""
+OMARCHY=0
 AVAIL=(); MISSING=()
 BOOTSTRAP=(); PACKAGES=(); SNAPS=(); FLATPAKS=()
 SUDO_KEEPALIVE=
@@ -103,8 +104,9 @@ check_distro() {
     echo "Your distribution is $NAME"
 
     case "${ID:-}" in
-        ubuntu) FAMILY=ubuntu; return ;;
-        arch)   FAMILY=arch;   return ;;
+        ubuntu)  FAMILY=ubuntu; return ;;
+        arch)    FAMILY=arch;   return ;;
+        omarchy) FAMILY=arch; OMARCHY=1; return ;;
     esac
     case " ${ID:-} ${ID_LIKE:-} " in
         *" arch "*)                    FAMILY=arch   ;;
@@ -170,7 +172,9 @@ set_package_lists() {
 sync_index() {
     case "$FAMILY" in
         ubuntu|debian) run sudo apt update ;;
-        arch)          run sudo pacman -Syu ${ASSUME_YES:+--noconfirm} ;;
+        arch)
+            if (( OMARCHY )); then run omarchy update
+            else run sudo pacman -Syu ${ASSUME_YES:+--noconfirm}; fi ;;
         fedora)        run sudo dnf makecache ;;
         suse)          run sudo zypper refresh ;;
     esac
@@ -458,7 +462,7 @@ main() {
 
     check_distro
     if [[ -z "$FAMILY" ]]; then
-        fail "Unsupported distribution. Supported: Ubuntu/Debian, Arch, Fedora, openSUSE."
+        fail "Unsupported distribution. Supported: Ubuntu/Debian, Arch, Omarchy, Fedora, openSUSE."
         exit 1
     fi
     (( DRY_RUN )) && warn "Dry run: nothing will be changed."
