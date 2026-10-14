@@ -170,7 +170,7 @@ set_package_lists() {
 sync_index() {
     case "$FAMILY" in
         ubuntu|debian) run sudo apt update ;;
-        arch)          run sudo pacman -Syu ${ASSUME_YES:+--noconfirm}; ;;
+        arch)          run sudo pacman -Syu ${ASSUME_YES:+--noconfirm} ;;
         fedora)        run sudo dnf makecache ;;
         suse)          run sudo zypper refresh ;;
     esac
