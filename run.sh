@@ -26,9 +26,22 @@ POKEMON_DIR="$HOME/pokemon-colorscripts"
 JDK_DIR="/opt/jdk-25"
 JDK_URL="https://download.oracle.com/java/25/latest"
 
+HERMES_REPO="https://github.com/NousResearch/hermes-agent.git"
+HERMES_DIR="$HOME/hermes-agent"
+HERMES_INSTALL_URL="https://hermes-agent.nousresearch.com/install.sh"
+
+AI_MODEL="qwen3.6:35b-a3b"
+AI_CTX=65536
+AI_MODEL_CTX="qwen3.6:35b-a3b-64k"
+OLLAMA_API="http://localhost:11434"
+LMS_MODEL="qwen/qwen3.6-35b-a3b"
+LMS_API="http://localhost:1234"
+AI_PROVIDER_MODEL=""; AI_BASE_URL=""
+
 ASSUME_YES=
 DRY_RUN=0
 DO_STEAM=1
+DO_AI=1
 
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
     ACCENT=$'\e[38;2;46;204;113m'; MUTED=$'\e[38;2;39;130;82m'
@@ -72,6 +85,7 @@ autopilot: rebuild (or refresh) my whole setup on any machine. Safe to re-run.
   run.sh --yes         same, but answer "yes" to package manager prompts
   run.sh --dry-run     print every change instead of doing it
   run.sh --no-steam    skip the steam section
+  run.sh --no-ai       skip Hermes Agent + local model (~22 GB download)
   run.sh --help
 
 Remote:  bash <(curl -fsSL https://raw.githubusercontent.com/nullbyte6/autopilot/main/run.sh) --yes
@@ -245,6 +259,141 @@ install_jdk() {
         fail "Could not install JDK 25 into $JDK_DIR"
     fi
     rm -rf "$tmp"
+}
+
+install_hermes() {
+    if have hermes; then
+        ok "Hermes Agent already installed"; return 0
+    fi
+    # Distro/AUR package first (only used if a repo actually carries it)
+    local pkg
+    for pkg in hermes-agent hermes-agent-git; do
+        if (( ! DRY_RUN )) && pkg_exists "$pkg"; then
+            if install_pkgs "$pkg"; then ok "Hermes Agent installed from repo ($pkg)"; return 0; fi
+        fi
+    done
+    info "No repo package, using the official installer"
+    if run bash -c "curl -fsSL '$HERMES_INSTALL_URL' | bash"; then
+        ok "Hermes Agent installed"; return 0
+    fi
+    warn "Official installer failed, cloning $HERMES_REPO and installing from source"
+    if [[ -d "$HERMES_DIR/.git" ]]; then run git -C "$HERMES_DIR" pull --ff-only
+    else run git clone --depth 1 "$HERMES_REPO" "$HERMES_DIR"; fi || { fail "Could not clone Hermes Agent"; return 1; }
+    if run python3 -m venv "$HERMES_DIR/.venv" \
+       && run "$HERMES_DIR/.venv/bin/pip" install -e "$HERMES_DIR" \
+       && run mkdir -p "$HOME/.local/bin" \
+       && run ln -sf "$HERMES_DIR/.venv/bin/hermes" "$HOME/.local/bin/hermes"; then
+        ok "Hermes Agent installed from source into $HERMES_DIR"
+    else
+        fail "Hermes Agent source install failed"; return 1
+    fi
+}
+
+wait_for_url() {
+    local url="$1" i
+    (( DRY_RUN )) && return 0
+    for i in {1..30}; do curl -fsS "$url" >/dev/null 2>&1 && return 0; sleep 1; done
+    return 1
+}
+
+setup_ollama() {
+    if ! have ollama; then
+        if (( ! DRY_RUN )) && pkg_exists ollama && install_pkgs ollama; then :
+        else
+            info "Using the official Ollama installer"
+            run bash -c "curl -fsSL https://ollama.com/install.sh | sh" || { fail "Could not install Ollama"; return 1; }
+        fi
+    fi
+    ok "Ollama available"
+    if have systemctl && ! curl -fsS "$OLLAMA_API/api/tags" >/dev/null 2>&1; then
+        run sudo systemctl enable --now ollama || true
+    fi
+    if ! wait_for_url "$OLLAMA_API/api/tags"; then
+        info "Starting ollama serve in the background"
+        (( DRY_RUN )) || { nohup ollama serve >/dev/null 2>&1 & }
+        wait_for_url "$OLLAMA_API/api/tags" || { fail "Ollama server is not responding"; return 1; }
+    fi
+
+    run ollama pull "$AI_MODEL" || { fail "Could not pull $AI_MODEL"; return 1; }
+    ok "$AI_MODEL pulled"
+
+    # Ollama defaults to a tiny context; Hermes wants 64k+
+    local tmp; tmp="$(mktemp -d)"
+    printf 'FROM %s\nPARAMETER num_ctx %s\n' "$AI_MODEL" "$AI_CTX" > "$tmp/Modelfile"
+    if run ollama create "$AI_MODEL_CTX" -f "$tmp/Modelfile"; then
+        ok "Created $AI_MODEL_CTX (num_ctx $AI_CTX)"
+        AI_PROVIDER_MODEL="$AI_MODEL_CTX"
+    else
+        warn "Could not build the long-context variant, using $AI_MODEL as is"
+        AI_PROVIDER_MODEL="$AI_MODEL"
+    fi
+    rm -rf "$tmp"
+    AI_BASE_URL="$OLLAMA_API/v1"
+}
+
+setup_lmstudio() {
+    if ! have lms; then
+        if [[ "$FAMILY" == arch ]] && have yay; then
+            run yay -S --needed ${ASSUME_YES:+--noconfirm} lmstudio || true
+        fi
+        [[ -x "$HOME/.lmstudio/bin/lms" ]] && export PATH="$HOME/.lmstudio/bin:$PATH"
+    fi
+    if ! have lms; then
+        warn "LM Studio CLI (lms) not found; install LM Studio from https://lmstudio.ai and re-run"
+        return 1
+    fi
+    run lms get "$LMS_MODEL" -y || { fail "lms could not download $LMS_MODEL"; return 1; }
+    run lms server start || true
+    wait_for_url "$LMS_API/v1/models" || { fail "LM Studio server is not responding"; return 1; }
+    ok "LM Studio serving $LMS_MODEL"
+    AI_PROVIDER_MODEL="$LMS_MODEL"
+    AI_BASE_URL="$LMS_API/v1"
+}
+
+configure_hermes() {
+    local cfg="$HOME/.hermes/config.yaml"
+    run mkdir -p "$HOME/.hermes"
+    if (( DRY_RUN )); then
+        info "Would set model.default=$AI_PROVIDER_MODEL, provider=custom, base_url=$AI_BASE_URL in $cfg"
+        return 0
+    fi
+    if python3 - "$cfg" "$AI_PROVIDER_MODEL" "$AI_BASE_URL" <<'PY'
+import sys, os
+path, model, url = sys.argv[1:4]
+try:
+    import yaml
+except ImportError:
+    sys.exit(2)
+data = {}
+if os.path.exists(path):
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
+m = data.get("model")
+if not isinstance(m, dict):
+    m = {}
+m.update({"default": model, "provider": "custom", "base_url": url})
+data["model"] = m
+with open(path, "w") as f:
+    yaml.safe_dump(data, f, sort_keys=False)
+PY
+    then
+        ok "Hermes configured to use $AI_PROVIDER_MODEL at $AI_BASE_URL"
+    elif [[ ! -e "$cfg" ]]; then
+        printf 'model:\n  default: "%s"\n  provider: "custom"\n  base_url: "%s"\n' "$AI_PROVIDER_MODEL" "$AI_BASE_URL" > "$cfg" \
+            && ok "Wrote $cfg"
+    else
+        warn "PyYAML missing and $cfg exists; in Hermes run: /model $AI_PROVIDER_MODEL (base_url $AI_BASE_URL)"
+    fi
+}
+
+setup_ai() {
+    AI_PROVIDER_MODEL=""; AI_BASE_URL=""
+    install_hermes || return 1
+    if ! setup_ollama; then
+        warn "Ollama path failed, falling back to LM Studio"
+        setup_lmstudio || { fail "No local model backend could be set up"; return 1; }
+    fi
+    configure_hermes
 }
 
 clip() {
@@ -446,6 +595,7 @@ main() {
             -y|--yes)     ASSUME_YES=1 ;;
             -n|--dry-run) DRY_RUN=1 ;;
             --no-steam)   DO_STEAM=0 ;;
+            --no-ai)      DO_AI=0 ;;
             -h|--help)    usage; exit 0 ;;
             *) echo "Unknown option: $arg (try --help)"; exit 1 ;;
         esac
@@ -641,6 +791,13 @@ main() {
         "steam_${FAMILY}"
     else
         info "Steam skipped (--no-steam)"
+    fi
+
+    if (( DO_AI )); then
+        section "Hermes Agent + local model"
+        setup_ai
+    else
+        info "Hermes Agent skipped (--no-ai)"
     fi
 
     section "Pokémon colorscripts"
