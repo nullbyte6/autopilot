@@ -63,7 +63,7 @@ declare -A STOW_FOR=(
     [neovim]=neovim [fish]=fish [kitty]=kitty
     [starship]=starship [yazi]=yazi [bashtop]=bashtop
     [btop]=bashtop [fastfetch]=fastfetch [bashrc]=bashrc [zshrc]=zshrc
-    [ohmyzsh]=ohmyzsh [oxide]=oxide
+    [ohmyzsh]=ohmyzsh [oxide]=oxide [vicinae]=vicinae [vicinae-bin]=vicinae
 )
 declare -A STOW_OPTS=([ohmyzsh]='--ignore=themes')
 ALWAYS_STOW=(bashrc zshrc ohmyzsh oxide)
@@ -152,7 +152,7 @@ set_package_lists() {
             neovim fish zsh kitty fastfetch starship bashtop yazi zig
             ffmpeg python-pip
             ttf-jetbrains-mono
-            firefox bitwarden protonmail-bridge spotify claude-desktop visual-studio-code-bin
+            firefox bitwarden protonmail-bridge spotify claude-desktop visual-studio-code-bin vicinae-bin
         )
         SNAPS=(); FLATPAKS=()
         ;;
