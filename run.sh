@@ -60,8 +60,8 @@ BOOTSTRAP=(); PACKAGES=(); SNAPS=(); FLATPAKS=()
 SUDO_KEEPALIVE=
 
 declare -A STOW_FOR=(
-    [neovim]=neovim [fish]=fish [kitty]=kitty [alacritty]=alacritty
-    [ghostty]=ghostty [starship]=starship [yazi]=yazi [bashtop]=bashtop
+    [neovim]=neovim [fish]=fish [kitty]=kitty
+    [starship]=starship [yazi]=yazi [bashtop]=bashtop
     [btop]=bashtop [fastfetch]=fastfetch [bashrc]=bashrc [zshrc]=zshrc
     [ohmyzsh]=ohmyzsh [oxide]=oxide
 )
